@@ -1,0 +1,31 @@
+graph TD
+    subgraph UI["Streamlit UI (streamlit_app.py)"]
+        U1[User uploads PDF] --> S1[save_uploaded_pdf<br/>writes to uploads/]
+        U2[User asks question<br/>+ top_k]
+    end
+
+    S1 --> E1{{Event: rag/ingest_pdf}}
+    U2 --> E2{{Event: rag/query_pdf_ai}}
+
+    subgraph BE["FastAPI + Inngest (main.py)"]
+        E1 --> F1[rag_ingest_pdf]
+        F1 --> L1["Step: load-and-chunk<br/>PDFReader + SentenceSplitter<br/>1000 chars, 200 overlap"]
+        L1 --> L2["Step: embed-and-upsert<br/>uuid5 ids + payload"]
+
+        E2 --> F2[rag_query_pdf]
+        F2 --> Q1["Step: embed-and-search<br/>embed question"]
+        Q1 --> Q2[Build prompt:<br/>context + question]
+        Q2 --> Q3["Step: llm-answer<br/>ctx.step.ai.infer"]
+    end
+
+    L2 --> G1[Gemini embedding-001<br/>3072-dim vectors]
+    G1 --> V1[(Qdrant 'docs' collection<br/>cosine distance)]
+    Q1 --> G2[Gemini embed question]
+    G2 --> V2["Qdrant query_points<br/>top_k matches"]
+    V1 -.stored vectors.-> V2
+    V2 --> Q2
+    Q3 --> G3[Gemini 3.5 Flash<br/>answer from context only]
+    G3 --> R1[RAGQueryResult:<br/>answer + sources + num_contexts]
+
+    R1 --> P1[Streamlit polls Inngest API<br/>/v1/events/id/runs every 0.5s]
+    P1 --> U3[Show answer + sources]
